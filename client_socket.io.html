@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+         body {
+            background-color: #adadad;
+            margin: 0;
+            height: 100vh;
+         }
+      
+         #nomJeu {
+            text-align: center;
+         }
+      
+         #chat {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            width: 200px;
+            height: 300px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 10px;
+         }
+      
+         #messages {
+            height: 200px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 5px;
+            margin-bottom: 10px;
+         }
+      
+         #messageInput {
+            width: 100%;
+            padding: 5px;
+            margin-bottom: 5px;
+            border-radius: 10px; 
+            box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3); 
+            border: 1px solid #ccc;
+         }
+      
+         button {
+            border-radius: 10px; 
+            box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3);
+            padding: 10px 20px;
+            margin: 5px;
+            background-color: #cccccc; 
+            color: white; 
+            border: none;
+            cursor: pointer;
+         }
+      
+         button:hover {
+            background-color: #383838; 
+         }
+      
+         input[type="text"] {
+            border-radius: 10px; 
+            box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3); 
+            padding: 5px;
+            border: 1px solid #ccc; 
+         }
+      </style>
+      
+
+      <link rel="stylesheet" href="client.css">
+      <script src="https://d3js.org/d3.v7.min.js"></script>
+      <script src="/socket.io/socket.io.js"></script>
+      <script>
+      window.addEventListener('load', () => {
+      ///partie D3
+         const svg = d3.select("#tablier")
+            .append("svg")
+            .attr("width", 600)
+            .attr("height", 400);
+
+         const rayon = 20;
+         const nbLignes = 10;
+         const nbColonnes = 10;
+
+         function creerHexagone(rayon,origineX,origineY){
+            var points = [];
+            for(let i=0;i<6;i++){
+               let angle=i*Math.PI/3;
+               let x=Math.sin(angle)*rayon;
+               let y=-Math.cos(angle)*rayon;
+               points.push([(Math.round(x*100)/100)+origineX,
+               (Math.round(y*100)/100)+origineY]);
+            }
+            return points;
+         }
+
+         for(var l=0;l<nbLignes;l++){
+            for(var c=0;c<nbColonnes;c++){
+               var origineX = 20+ c * (rayon * 2) + l * rayon;
+               var origineY = 50+l * (rayon * Math.sqrt(3));
+               const hexagones = creerHexagone(rayon,origineX,origineY);
+               var d = "M" + hexagones.map(p => p.join(",")).join("L") + "Z";
+               svg.append("path")
+                  .attr("d",d)
+                  .attr("stroke","black")
+                  .attr("fill","white")
+                  .attr("id","h"+(l*nbColonnes+c))
+                  .on("click",function(d){
+                     console.log(d3.select(this).attr('id'));
+                     ///d3.select(this).attr('fill','red');
+                     let numHexagone = parseInt(d3.select(this).attr('id').substring(1));
+                     socket.emit('selectionHexagone', [numHexagone,numJoueur]);
+                  });
+            }
+         }
+      });
+      ///partie JS
+         var socket = io();
+         let listJoueurs=[];
+         let couleurs=['red','blue'];
+         let numJoueur=0;
+         let myName="";
+
+         function entree(){
+            myName=document.getElementById("myName").value;
+            socket.emit('entree',myName);
+            document.getElementById('myName').disabled=true;
+         }
+         function sortie(){
+            myName=document.getElementById("myName").value;
+            socket.emit('sortie',[myName,numJoueur]);
+            document.getElementById('myName').disabled=false;
+         }
+         function envoyerMessage() {
+            let message = document.getElementById("messageInput").value;
+            socket.emit('message', [myName, message]);
+            document.getElementById("messageInput").value = "";
+         }
+         socket.on('numJoueur', data => {
+            numJoueur=data;
+         });
+         socket.on('listJoueurs', data => {
+            listJoueurs=data;
+            document.getElementById('listJoueurs').textContent="list des Joueurs: "+data.join(",");
+         });
+         socket.on('ajoue', data => {
+            console.log("position: "+data[0]+" ,numjoueur: "+data[1]);
+            d3.select("#h"+data[0]).attr('fill',couleurs[data[1]-1]);
+         });
+         socket.on('message', data => {
+            let messagesDiv = document.getElementById('messages');
+            let messageElement = document.createElement('div');
+            messageElement.textContent = data[0] + ": " + data[1];
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+         });
+         
+         window.addEventListener('beforeunload', (event) => {
+            socket.emit('sortie',[myName,numJoueur]);
+            event.returnValue = ''; 
+         });
+
+         window.addEventListener('unload', (event) => {
+            socket.emit('sortie', [myName,numJoueur]);
+         });
+         socket.on('reinitialiserTablier', () => {
+            reinitialiserTablier();
+            });
+            
+         function reinitialiserTablier() {
+            d3.selectAll("path").attr("fill", "white");
+         }
+            
+
+
+      </script>
+   </head>
+   <body> 
+      <h1 id="nomJeu">Jeu de hex</h1>
+
+      <input type="text" id="myName">
+      <button onclick="entree()">entrer</button>
+      <button onclick="sortie()">sortir</button>
+      <div id="listJoueurs">list des Joueurs: </div>
+      <div id="tablier"></div>
+      <div id="chat">
+         <div id="messages"></div>
+         <input type="text" id="messageInput" placeholder="Entrez votre message">
+         <button onclick="envoyerMessage()">Envoyer</button>
+      </div>
+
+   </body>
+
+</html>
